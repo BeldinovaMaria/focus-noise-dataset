@@ -1,7 +1,9 @@
 %% Generate labeled viridis dataset for multiple classes
-% mVortex in {1, -1, 2, -2}
+% Class = absolute value of the topological charge |mVortex| in {1, ..., 8}.
+% Positive and negative charges (+m and -m) are merged into one class.
 % delta in {pi/8, pi/16}
-% 50 images per (mVortex, delta) combination
+% numImagesPerVariant images per (sign, delta) combination,
+% i.e. 2 signs * 2 deltas * numImagesPerVariant images per class
 
 clear all
 clear classes
@@ -13,10 +15,11 @@ NA = 0.95;
 rMin = -1.0;
 rMax = 1.0;
 discretization = 100;
-numImagesPerClass = 50;
+numImagesPerVariant = 25;   % per (sign, delta) -> 100 images per class
 
-% Requested classes
-mVortexList = [1, -1, 2, -2];
+% Requested classes: |mVortex| = 1..8, both signs merged into one class
+absMList = 1:8;
+signList = [1, -1];
 deltaList = [pi/8, pi/16];
 
 % -------- Output folders --------
@@ -33,42 +36,50 @@ cmap = getViridisMap(256);
 rng('shuffle');
 totalSaved = 0;
 
-for mIdx = 1:numel(mVortexList)
-    mVort = mVortexList(mIdx);
+for aIdx = 1:numel(absMList)
+    absM = absMList(aIdx);
 
-    for dIdx = 1:numel(deltaList)
-        delta = deltaList(dIdx);
+    className = sprintf('class_absM_%d', absM);
+    classFolder = fullfile(datasetRoot, className);
+    if ~exist(classFolder, 'dir')
+        mkdir(classFolder);
+    end
 
-        className = sprintf('class_mVort_%d_delta_%0.4f', mVort, delta);
-        classFolder = fullfile(datasetRoot, className);
-        if ~exist(classFolder, 'dir')
-            mkdir(classFolder);
-        end
+    % Label shows only |mVortex|, the sign is not part of the class
+    labelText = sprintf('|mVortex|=%d', absM);
+    imgIdx = 0;
 
-        r2 = circularPar(lambda, NA, 'right');
-        r2.mVortex = mVort;
-        r2.alphaMax = 2*pi - delta/2;
-        r2.alphaMin = delta/2;
-        r2 = r2.setRBorders(rMin, rMax, discretization);
-        r2 = r2.calcIntensityFocus();
+    for sIdx = 1:numel(signList)
+        mVort = signList(sIdx) * absM;
 
-        baseImage = real(r2.intensityFocus);
-        baseImage = baseImage - min(baseImage(:));
-        if max(baseImage(:)) > 0
-            baseImage = baseImage ./ max(baseImage(:));
-        end
+        for dIdx = 1:numel(deltaList)
+            delta = deltaList(dIdx);
 
-        deltaText = deltaToText(delta);
-        labelText = sprintf('mVortex=%d, delta=%s', mVort, deltaText);
+            r2 = circularPar(lambda, NA, 'right');
+            r2.mVortex = mVort;
+            r2.alphaMax = 2*pi - delta/2;
+            r2.alphaMin = delta/2;
+            r2 = r2.setRBorders(rMin, rMax, discretization);
+            r2 = r2.calcIntensityFocus();
 
-        for idx = 1:numImagesPerClass
-            img = addNoise(baseImage);
-            rgbImage = ind2rgb(uint8(img * 255) + 1, cmap);
-            rgbLabeled = addLabelToImage(rgbImage, labelText);
+            baseImage = real(r2.intensityFocus);
+            baseImage = baseImage - min(baseImage(:));
+            if max(baseImage(:)) > 0
+                baseImage = baseImage ./ max(baseImage(:));
+            end
 
-            outName = sprintf('img_%03d.png', idx);
-            imwrite(rgbLabeled, fullfile(classFolder, outName));
-            totalSaved = totalSaved + 1;
+            for idx = 1:numImagesPerVariant
+                img = addNoise(baseImage);
+                rgbImage = ind2rgb(uint8(img * 255) + 1, cmap);
+                rgbLabeled = addLabelToImage(rgbImage, labelText);
+
+                % Sign and delta are kept only in the file name (for reference)
+                imgIdx = imgIdx + 1;
+                outName = sprintf('img_%03d_m%+d_delta_%s.png', imgIdx, mVort, ...
+                    strrep(deltaToText(delta), '/', ''));
+                imwrite(rgbLabeled, fullfile(classFolder, outName));
+                totalSaved = totalSaved + 1;
+            end
         end
     end
 end

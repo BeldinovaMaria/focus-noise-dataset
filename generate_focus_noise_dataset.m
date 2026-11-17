@@ -1,5 +1,7 @@
 %% Generate noisy images for one class (focus intensity)
 % Creates ~500 augmented images for a single class based on intensityFocus.
+% Class = absolute value of the topological charge |mVortex|:
+% images for +absM and -absM are merged into the same class folder.
 
 clear all
 clear classes
@@ -13,7 +15,7 @@ rMax = 1.0;
 discretization = 100;
 
 % Class parameters
-mVort = 5;
+absM = 5;          % |mVortex|, expected range 1..8
 delta = pi/8;
 
 % Number of generated images for this class
@@ -22,7 +24,7 @@ numImages = 500;
 % -------- Prepare class output folder --------
 projectRoot = pwd;
 datasetRoot = fullfile(projectRoot, 'generated_focus_noise_dataset');
-className = sprintf('class_mVort_%d_delta_%0.4f', mVort, delta);
+className = sprintf('class_absM_%d', absM);
 classFolder = fullfile(datasetRoot, className);
 
 if ~exist(datasetRoot, 'dir')
@@ -32,25 +34,33 @@ if ~exist(classFolder, 'dir')
     mkdir(classFolder);
 end
 
-% -------- Calculate base focus intensity --------
-r2 = circularPar(lambda, NA, 'right');
-r2.mVortex = mVort;
-r2.alphaMax = 2*pi - delta/2;
-r2.alphaMin = delta/2;
-r2 = r2.setRBorders(rMin, rMax, discretization);
-r2 = r2.calcIntensityFocus();
+% -------- Calculate base focus intensity for +absM and -absM --------
+signList = [1, -1];
+baseImages = cell(1, numel(signList));
+for sIdx = 1:numel(signList)
+    r2 = circularPar(lambda, NA, 'right');
+    r2.mVortex = signList(sIdx) * absM;
+    r2.alphaMax = 2*pi - delta/2;
+    r2.alphaMin = delta/2;
+    r2 = r2.setRBorders(rMin, rMax, discretization);
+    r2 = r2.calcIntensityFocus();
 
-baseImage = real(r2.intensityFocus);
-baseImage = baseImage - min(baseImage(:));
-if max(baseImage(:)) > 0
-    baseImage = baseImage ./ max(baseImage(:));
+    b = real(r2.intensityFocus);
+    b = b - min(b(:));
+    if max(b(:)) > 0
+        b = b ./ max(b(:));
+    end
+    baseImages{sIdx} = b;
 end
 
 % -------- Generate noisy images --------
 rng('shuffle');
 cmap = getViridisMap(256);
 for idx = 1:numImages
-    img = baseImage;
+    % Alternate signs so that +absM and -absM are equally represented
+    sIdx = mod(idx - 1, numel(signList)) + 1;
+    mVort = signList(sIdx) * absM;
+    img = baseImages{sIdx};
 
     % Gaussian noise with random strength
     sigmaGauss = 0.005 + (0.06 - 0.005) * rand();
@@ -75,7 +85,7 @@ for idx = 1:numImages
     img = min(max(img, 0), 1);
 
     rgbImage = ind2rgb(uint8(img * 255) + 1, cmap);
-    outName = sprintf('img_%04d.png', idx);
+    outName = sprintf('img_%04d_m%+d.png', idx, mVort);
     imwrite(rgbImage, fullfile(classFolder, outName));
 end
 
